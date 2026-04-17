@@ -9,7 +9,7 @@ import time
 import ast
 from typing import Dict
 
-from sparcleqc.amber_prep import write_cpptraj, write_cpptraj_skip_autocap, write_tleap, autocap, skip_autocap, reorder_atoms_amber, normalize_chain_ids_for_amber_prep
+from sparcleqc.amber_prep import write_cpptraj, write_cpptraj_skip_autocap, write_tleap, autocap, skip_autocap, reorder_atoms_amber, normalize_chain_ids_for_amber_prep, normalize_residue_names_for_amber_prep
 from sparcleqc.charmm_prep import psf_to_mol2, get_cx_pdb, reorder_atoms_charmm
 from sparcleqc.complex_tools import check_df_charges, check_mol2_charges, convert_seed, closest_contact
 from sparcleqc.combine_data import create_csv
@@ -398,6 +398,10 @@ def run_sparcle(input_file= None, user_options = None):
 
         #if forcefield is amber, writing and running cpptraj files and dealing with capping residues
         if 'amber_ff' in keywords: 
+            # Normalize known residue aliases on the local copied PDB before
+            # Amber prep so tleap sees standard residue names where safe.
+            normalize_residue_names_for_amber_prep(keywords['pdb_file'])
+
             # Infer missing chain IDs on the local copied PDB before cpptraj and
             # tleap read it so blank-chain termini do not get interpreted as one
             # continuous peptide across a real chain break.

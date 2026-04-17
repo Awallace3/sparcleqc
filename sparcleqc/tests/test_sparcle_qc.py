@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sparcleqc
 import sparcleqc.combine_data as combine_data
+from sparcleqc.amber_prep import normalize_residue_names_for_amber_prep
 
 
 slow = pytest.mark.slow
@@ -810,6 +811,31 @@ USER_CHARGES
     assert df.loc["2", "MOL2_AT"] == ""
     assert df.loc["2", "MOL2_RES"] == "NME"
     assert df.loc["2", "q"] == pytest.approx(0.0)
+
+
+@validation
+def test_amber_prep_normalizes_sem_alias_to_ser(tmp_path):
+    pdb_path = tmp_path / "sem_alias.pdb"
+    pdb_path.write_text(
+        """ATOM      1  N   SEM   177       0.000   0.000   0.000  1.00  0.00           N  
+ATOM      2  H   SEM   177       0.100   0.000   0.000  1.00  0.00           H  
+ATOM      3  CA  SEM   177       0.200   0.000   0.000  1.00  0.00           C  
+ATOM      4  HA  SEM   177       0.300   0.000   0.000  1.00  0.00           H  
+ATOM      5  CB  SEM   177       0.400   0.000   0.000  1.00  0.00           C  
+ATOM      6  HB2 SEM   177       0.500   0.000   0.000  1.00  0.00           H  
+ATOM      7  HB3 SEM   177       0.600   0.000   0.000  1.00  0.00           H  
+ATOM      8  OG  SEM   177       0.700   0.000   0.000  1.00  0.00           O  
+ATOM      9  C   SEM   177       0.800   0.000   0.000  1.00  0.00           C  
+ATOM     10  O   SEM   177       0.900   0.000   0.000  1.00  0.00           O  
+TER
+END
+"""
+    )
+
+    assert normalize_residue_names_for_amber_prep(str(pdb_path)) is True
+    normalized = pdb_path.read_text()
+    assert ' SEM ' not in normalized
+    assert normalized.count(' SER ') == 10
 
 
 @slow

@@ -5,6 +5,13 @@ from pymol import cmd, editor
 # normalized without mixing waters into inferred protein chains.
 WATER_RESNAMES = {'WAT', 'HOH', 'TIP', 'TIP3', 'TIP3P', 'OPC', 'SPC', 'SOL'}
 
+# Some PL-REX structures carry residue name SEM for atoms that are exactly a
+# standard serine sidechain. Normalize those local copies before tleap so Amber
+# does not create an untyped placeholder residue that later breaks capping.
+AMBER_PREP_RESIDUE_ALIASES = {
+    ('SEM', frozenset({'N', 'H', 'CA', 'HA', 'CB', 'HB2', 'HB3', 'OG', 'C', 'O'})): 'SER',
+}
+
 
 def _is_atom_record(line: str) -> bool:
     return line[0:6].strip() in {'ATOM', 'HETATM'}
@@ -19,6 +26,42 @@ def _parse_resseq(line: str):
         return int(line[22:26].strip())
     except ValueError:
         return None
+
+
+def normalize_residue_names_for_amber_prep(pdb_file: str) -> bool:
+    """
+    Rename known residue aliases on the local copied PDB before Amber prep.
+
+    This is only for cases where the atom-name signature already matches a
+    standard Amber residue and the original label is what prevents typing.
+    """
+    with open(pdb_file, 'r') as handle:
+        lines = handle.readlines()
+
+    residues = {}
+    for idx, line in enumerate(lines):
+        if not _is_atom_record(line):
+            continue
+        key = _residue_block_key(line)
+        block = residues.setdefault(key, {'line_indices': [], 'atom_names': set()})
+        block['line_indices'].append(idx)
+        block['atom_names'].add(line[11:16].strip())
+
+    changed = False
+    for key, block in residues.items():
+        resname = key[0]
+        alias = AMBER_PREP_RESIDUE_ALIASES.get((resname, frozenset(block['atom_names'])))
+        if alias is None:
+            continue
+        for line_index in block['line_indices']:
+            line = lines[line_index]
+            lines[line_index] = line[:17] + f'{alias:>3}' + line[20:]
+        changed = True
+
+    if changed:
+        with open(pdb_file, 'w') as handle:
+            handle.writelines(lines)
+    return changed
 
 
 def _starts_new_chain(previous_block: dict, current_block: dict) -> bool:
