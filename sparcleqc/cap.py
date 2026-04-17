@@ -6,6 +6,7 @@ from glob import glob
 import warnings
 from parmed.charmm import CharmmParameterSet
 from typing import Dict, List, Tuple
+from pprint import pprint as pp
 
 def get_boundary_bonds(Q1_coords:Tuple[str,str,str], M1_coords:Tuple[str,str,str], MOL2_PATH:str, ff_type:str, params:CharmmParameterSet = None) -> Tuple[str,str,str,str]: 
     """
@@ -246,6 +247,16 @@ def cap(no_HL:Dict[str,List[int]], num_broken_bonds:int, PDB_PATH:str, MOL2_PATH
     out.close()
     return 
 
+def count_broken_bonds(index_dict: Dict[str, List[int]]) -> int:
+    """Return the number of QM/MM frontier bonds encoded in the index dictionary."""
+    bond_indices = []
+    for key in index_dict:
+        if key.startswith('Q1_'):
+            bond_indices.append(int(key.split('_')[-1]))
+    if not bond_indices:
+        return 0
+    return max(bond_indices)
+
 def run_cap(ff_type:str, rtf:str = None, prm:str = None) -> None:    
     """
     caps Q1 atoms with hydrogen, scaled along Q1 M1 bond; produces new dictionary 'with_HL'
@@ -275,12 +286,21 @@ def run_cap(ff_type:str, rtf:str = None, prm:str = None) -> None:
     # load json dictionary
     with open('dictionary.dat', 'r') as dictfile:
         no_HL = json.load(dictfile)
-    
-    num_broken_bonds = int(list(no_HL.keys())[-1].split('_')[-1])
+    num_broken_bonds = count_broken_bonds(no_HL)
     
     PDB_PATH = 'cx_autocap_fixed.pdb' 
     MOL2_PATH = 'prot_autocap_fixed.mol2'
     CAPPED_PDB_PATH = 'CAPPED-prot_autocap_fixed.pdb'
+
+    if num_broken_bonds == 0:
+        shutil.copyfile(PDB_PATH, CAPPED_PDB_PATH)
+        with open('with_HL.dat', 'w+') as wfile:
+            json.dump(no_HL, wfile)
+        out = open(glob('*.out')[0], 'a')
+        out.write('No QM/MM frontier bonds were found; skipping link-atom capping.\n')
+        out.write(f'Hydrogen link atoms to cap the QM region have been added to {CAPPED_PDB_PATH}\n')
+        out.close()
+        return
         
     if ff_type =='amber':
         path_to_env = os.environ['AMBERHOME']

@@ -799,7 +799,14 @@ def make_monomers(charge_method:str) -> None:
     df = pd.read_csv('dataframe.csv', index_col=['CX_PDB_ID'])
     with open('with_HL.dat', 'r') as dictfile:
         with_HL = json.load(dictfile)
-    num_bonds_broken = int(list(with_HL.keys())[-1].split('_')[-1])
+    bond_indices = []
+    for key in with_HL:
+        if key.startswith('Q1_'):
+            bond_indices.append(int(key.split('_')[-1]))
+    if bond_indices:
+        num_bonds_broken = max(bond_indices)
+    else:
+        num_bonds_broken = 0
     c_QM = 0
     for x in with_HL['QM']:
         if '+' in df.at[x,'AT_LABEL']:
@@ -846,6 +853,8 @@ def make_monomers(charge_method:str) -> None:
         #we check for this in the input file so this else shouldn't ever be reached
         print('incorrect charge scheme')
         sys.exit()
+    if mm_env == []:
+        mm_env = None
     return qm_lig, c_QM, qm_pro, mm_env
 
 def write_psi4_file(qm_lig, c_QM, qm_pro, mm_env, PSI4_FILE_PATH:str, c_ligand:str, method:str, basis_set:str, mem:str, nthreads:str, psi4_options, do_fsapt:str = None):

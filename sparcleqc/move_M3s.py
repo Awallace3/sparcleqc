@@ -101,6 +101,16 @@ def move_ids(atom_ids: List[int], no_HL:Dict[str,List[int]]) -> Dict[str,List[in
             no_HL[old_k].remove(atom_id)
     return no_HL
 
+def count_broken_bonds(index_dict: Dict[str, List[int]]) -> int:
+    """Return the number of QM/MM frontier bonds encoded in the index dictionary."""
+    bond_indices = []
+    for key in index_dict:
+        if key.startswith('Q1_'):
+            bond_indices.append(int(key.split('_')[-1]))
+    if not bond_indices:
+        return 0
+    return max(bond_indices)
+
 
 def move_m3s() -> None:    
     """
@@ -118,7 +128,7 @@ def move_m3s() -> None:
     """
     with open('pre-dictionary.dat', 'r') as dictfile:
         no_HL = json.load(dictfile)
-    num_broken_bonds = int(list(no_HL.keys())[-1].split('_')[-1])
+    num_broken_bonds = count_broken_bonds(no_HL)
     df = pd.read_csv('dataframe.csv', index_col=['CX_PDB_ID'])
     to_move = []
     for bond in range(1,num_broken_bonds+1):
