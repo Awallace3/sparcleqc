@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from glob import glob
 from typing import List, Dict, Tuple
+from sparcleqc.combine_data import mol2_atom_charge, mol2_atom_metadata, mol2_atom_records
 
 def ligand_pdb_lines(LIGAND_PDB_PATH: str) -> List[str]:
     """
@@ -145,57 +146,45 @@ def MM_xyz_to_charge_array(MM_lines_c: List[str], MM_lines_0: List[str], MOL2_PA
     MM_for_array: List[str]
         list of the charges along with xyz coords
     """
-    # takes MM lines from PDB file, matches them to MOL2 file, gets charges, then builds array of MM atoms
-    with open(MOL2_PATH, 'r', encoding="iso-8859-1") as mol2file:
-        H2_WAT_atms = []
-        lines = mol2file.readlines()
-        for n,l in enumerate(lines):                                        # filter lines for atoms only
-            if 'ATOM' in l:
-                start = n
-            elif 'HETATM' in l:
-                start = n
-            elif 'BOND' in l:
-                end = n
-        mollines = lines[start+1:end]
-        for l in mollines:                                           # storing the next three lines for getting OPC dummy atom
-            mol2idx = int(l.split()[0])                                          #- getting mol2 atom id / index
-            mol2at = str(l.split()[1])                                           #- atom type
-            mol2resi = str(l.split()[7])                                         #- residue
-            mol2x = float("{:.3f}".format(float(l.split()[2])))             # matching lines in mol2 to MM XYZ coords bc
-            mol2y = float("{:.3f}".format(float(l.split()[3])))             # indices btwn mol2 and pdb don't match
-            mol2z = float("{:.3f}".format(float(l.split()[4])))
-            if MM_lines_c != None:
-                for i in range(int(len(MM_lines_c)/4)):             # looping through each [atom,x,y,z]
-                    mmx = float(MM_lines_c[1+(4*i)])
-                    mmy = float(MM_lines_c[2+(4*i)])
-                    mmz = float(MM_lines_c[3+(4*i)])
-                    if mmx == mol2x and mmy == mol2y and mmz == mol2z:
-                        charge = l.split()[-2]
-                        MM_for_array.append(str(charge))
-                        MM_for_array.append(str(mmx))
-                        MM_for_array.append(str(mmy))
-                        MM_for_array.append(str(mmz)+'\n')
-                        if mol2at == 'H2' and mol2resi == 'WAT':
-                            H2_WAT_atms.append(mol2idx)
-            if MM_lines_0 != None:
-                for i in range(int(len(MM_lines_0)/4)):                           # looping through each [atom,x,y,z]
-                    mmx = float(MM_lines_0[1+(4*i)])
-                    mmy = float(MM_lines_0[2+(4*i)])
-                    mmz = float(MM_lines_0[3+(4*i)])
-                    if mmx == mol2x and mmy == mol2y and mmz == mol2z:
-                        charge = l.split()[-2]
-                        MM_for_array.append(str(0.000))                           # zeroing out the charge
-                        MM_for_array.append(str(mmx))
-                        MM_for_array.append(str(mmy))
-                        MM_for_array.append(str(mmz)+'\n')
-            if H2_WAT_atms != None:
-                for i in H2_WAT_atms:
-                    if mol2idx == i+1:
-                        charge = l.split()[-2]
-                        MM_for_array.append(str(charge))
-                        MM_for_array.append(str(mol2x))
-                        MM_for_array.append(str(mol2y))
-                        MM_for_array.append(str(mol2z)+'\n')
+    # Match MM coordinates against logical mol2 atom records so wrapped ATOM lines keep their charges.
+    H2_WAT_atms = []
+    for fields in mol2_atom_records(MOL2_PATH):
+        mol2idx = int(fields[0])
+        mol2at, _, mol2resi, _ = mol2_atom_metadata(fields)
+        mol2x = float("{:.3f}".format(float(fields[2])))
+        mol2y = float("{:.3f}".format(float(fields[3])))
+        mol2z = float("{:.3f}".format(float(fields[4])))
+        if MM_lines_c != None:
+            for i in range(int(len(MM_lines_c)/4)):             # looping through each [atom,x,y,z]
+                mmx = float(MM_lines_c[1+(4*i)])
+                mmy = float(MM_lines_c[2+(4*i)])
+                mmz = float(MM_lines_c[3+(4*i)])
+                if mmx == mol2x and mmy == mol2y and mmz == mol2z:
+                    charge = mol2_atom_charge(fields)
+                    MM_for_array.append(str(charge))
+                    MM_for_array.append(str(mmx))
+                    MM_for_array.append(str(mmy))
+                    MM_for_array.append(str(mmz)+'\n')
+                    if mol2at == 'H2' and mol2resi == 'WAT':
+                        H2_WAT_atms.append(mol2idx)
+        if MM_lines_0 != None:
+            for i in range(int(len(MM_lines_0)/4)):                           # looping through each [atom,x,y,z]
+                mmx = float(MM_lines_0[1+(4*i)])
+                mmy = float(MM_lines_0[2+(4*i)])
+                mmz = float(MM_lines_0[3+(4*i)])
+                if mmx == mol2x and mmy == mol2y and mmz == mol2z:
+                    MM_for_array.append(str(0.000))                           # zeroing out the charge
+                    MM_for_array.append(str(mmx))
+                    MM_for_array.append(str(mmy))
+                    MM_for_array.append(str(mmz)+'\n')
+        if H2_WAT_atms != None:
+            for i in H2_WAT_atms:
+                if mol2idx == i+1:
+                    charge = mol2_atom_charge(fields)
+                    MM_for_array.append(str(charge))
+                    MM_for_array.append(str(mol2x))
+                    MM_for_array.append(str(mol2y))
+                    MM_for_array.append(str(mol2z)+'\n')
     return MM_for_array
  
 def SEE_atoms(num_bonds_broken:int, with_HL:Dict[str,List[int]]) -> List[str]:
@@ -598,28 +587,20 @@ def get_charge_and_resn(MOL2_PATH:str, MM_line:str) -> Tuple[float, str]: # get 
     charge, residue: Tuple[int,str]
         charge and residue of the MM line specified
     """
-    with open(MOL2_PATH, 'r', encoding="iso-8859-1") as mol2file:
-        lines = mol2file.readlines()
-        for n,l in enumerate(lines):                                        # filter lines for atoms only
-            if 'ATOM' in l:
-                start = n
-            elif 'HETATM' in l:
-                start = n
-            elif 'BOND' in l:
-                end = n
-        mollines = lines[start+1:end]
-        for l in mollines:                                                  # matching lines in .mol2 file to MM XYZ coords bc
-            mol2x = float("{:.3f}".format(float(l.split()[2])))             # indices between .mol2 and .pdb do not match
-            mol2y = float("{:.3f}".format(float(l.split()[3])))
-            mol2z = float("{:.3f}".format(float(l.split()[4])))
-            if MM_line != None:
-                for i in range(int(len(MM_line)/4)):                           # looping through each [atom,x,y,z]
-                    mmx = float(MM_line[1+(4*i)])
-                    mmy = float(MM_line[2+(4*i)])
-                    mmz = float(MM_line[3+(4*i)])
-                    if mmx == mol2x and mmy == mol2y and mmz == mol2z:
-                        charge = l.split()[-2]
-                        residue = l.split()[-3]+'_'+l.split()[-4]
+    # Use logical mol2 atom records here too so charge lookups survive wrapped lines.
+    for fields in mol2_atom_records(MOL2_PATH):
+        mol2x = float("{:.3f}".format(float(fields[2])))
+        mol2y = float("{:.3f}".format(float(fields[3])))
+        mol2z = float("{:.3f}".format(float(fields[4])))
+        if MM_line != None:
+            for i in range(int(len(MM_line)/4)):                           # looping through each [atom,x,y,z]
+                mmx = float(MM_line[1+(4*i)])
+                mmy = float(MM_line[2+(4*i)])
+                mmz = float(MM_line[3+(4*i)])
+                if mmx == mol2x and mmy == mol2y and mmz == mol2z:
+                    charge = mol2_atom_charge(fields)
+                    _, residue_number, residue_name, _ = mol2_atom_metadata(fields)
+                    residue = residue_name+'_'+residue_number
         if 'charge' not in locals():
             charge = 0
             residue = ''

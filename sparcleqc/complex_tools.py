@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Tuple
 import parmed as pmd
+from sparcleqc.combine_data import mol2_atom_charge, mol2_atom_metadata, mol2_atom_records
 
 
 def id_to_coords(pdb_file1: str, atom_id1: str) -> Tuple[str, str, str]:
@@ -104,27 +105,22 @@ def check_mol2_charges(mol2_file: str) -> Tuple[int, str]:
     #this was determined because amber lists charge to 3 decimal places, 
     #so anything different to the fourth decimal place or further is insignificant
     tolerance = 0.0001
-    with open(mol2_file, 'r') as file:
-        all_lines = file.readlines()
-        for n,line in enumerate(all_lines):
-            if 'ATOM' in line:
-                start = n
-            elif 'BOND' in line:
-                end = n
-        lines = all_lines[start+1:end]
-        init_resi = lines[0].split()[-3]
-        charge = 0
-        for line in lines:
-            resi_name = line.split()[-3]
-            resi_number = line.split()[-4]
-            if resi_number == init_resi:
-                charge += float(line.split()[-2])
-            else:
-                total_charge += charge
-                if np.abs(np.round(charge, 0) - charge) > tolerance:
-                    return (0, f'Residue {init_resi} charge: {charge}. Fix pdb/mol2 such that this residue has integer charge and restart')
-                init_resi = resi_number
-                charge = float(line.split()[-2])
+    # Residue-charge validation should see the same logical atom records as the dataframe builder.
+    lines = mol2_atom_records(mol2_file)
+    _, residue_number, residue_name, _ = mol2_atom_metadata(lines[0])
+    init_resi = f"{residue_name}_{residue_number}"
+    charge = 0
+    for fields in lines:
+        _, residue_number, residue_name, _ = mol2_atom_metadata(fields)
+        residue_id = f"{residue_name}_{residue_number}"
+        if residue_id == init_resi:
+            charge += mol2_atom_charge(fields)
+        else:
+            total_charge += charge
+            if np.abs(np.round(charge, 0) - charge) > tolerance:
+                return (0, f'Residue {init_resi} charge: {charge}. Fix pdb/mol2 such that this residue has integer charge and restart')
+            init_resi = residue_id
+            charge = mol2_atom_charge(fields)
     return (1, 'passed')
 
 def check_df_charges() -> Tuple[int, str]:

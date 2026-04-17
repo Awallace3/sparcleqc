@@ -10,6 +10,7 @@ import pytest
 import os
 from pathlib import Path
 import sparcleqc
+import sparcleqc.combine_data as combine_data
 
 
 slow = pytest.mark.slow
@@ -773,6 +774,42 @@ def test_exit(run_sparcle_test):
         true_exits.append(SystemExit)
 
     assert exits == true_exits
+
+
+@validation
+def test_mol2_parser_handles_wrapped_and_missing_atom_type_records(tmp_path):
+    mol2_path = tmp_path / "wrapped_missing_type.mol2"
+    mol2_path.write_text(
+        """@<TRIPOS>MOLECULE
+test
+ 2 0 0 0 0
+SMALL
+USER_CHARGES
+@<TRIPOS>ATOM
+  1 N       2.361000   18.948000  -15.434000 N3    1 NGLY \xea*
+   0.2943 ****
+  2 CH3    82.044000  150.902000  -42.552000      36 NME     0.0000 ****
+@<TRIPOS>BOND
+""",
+        encoding="latin1",
+    )
+
+    records = combine_data.mol2_atom_records(str(mol2_path))
+    assert len(records) == 2
+
+    atom_type, residue_number, residue_name, charge = combine_data.mol2_atom_metadata(records[0])
+    assert (atom_type, residue_number, residue_name, charge) == ("N3", "1", "NGLY", 0.2943)
+
+    atom_type, residue_number, residue_name, charge = combine_data.mol2_atom_metadata(records[1])
+    assert (atom_type, residue_number, residue_name, charge) == ("", "36", "NME", 0.0)
+
+    df = combine_data.mol2_to_df(str(mol2_path), {"MOL2_ID": []})
+    assert df.loc["1", "MOL2_AT"] == "N3"
+    assert df.loc["1", "MOL2_RES"] == "NGLY"
+    assert df.loc["1", "q"] == pytest.approx(0.2943)
+    assert df.loc["2", "MOL2_AT"] == ""
+    assert df.loc["2", "MOL2_RES"] == "NME"
+    assert df.loc["2", "q"] == pytest.approx(0.0)
 
 
 @slow

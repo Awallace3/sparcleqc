@@ -7,6 +7,7 @@ import warnings
 from parmed.charmm import CharmmParameterSet
 from typing import Dict, List, Tuple
 from pprint import pprint as pp
+from sparcleqc.combine_data import mol2_atom_records
 
 def get_boundary_bonds(Q1_coords:Tuple[str,str,str], M1_coords:Tuple[str,str,str], MOL2_PATH:str, ff_type:str, params:CharmmParameterSet = None) -> Tuple[str,str,str,str]: 
     """
@@ -42,23 +43,15 @@ def get_boundary_bonds(Q1_coords:Tuple[str,str,str], M1_coords:Tuple[str,str,str
 
     """
     out = open(glob('*.out')[0], 'a')
-    # get atom types of Q1 and M1
-    with open(MOL2_PATH, 'r', encoding="iso-8859-1") as mol2file:
-        lines = mol2file.readlines()
-        for n,l in enumerate(lines):                                        # filter lines for atoms only
-            if 'ATOM' in l:
-                start = n
-            elif 'BOND' in l:
-                end = n
-        atom_lines = lines[start+1:end]
-        for l in atom_lines:
-            x = float("{:.3f}".format(float(l.split()[2])))
-            y = float("{:.3f}".format(float(l.split()[3])))
-            z = float("{:.3f}".format(float(l.split()[4])))
-            if float(Q1_coords[0]) == x and float(Q1_coords[1]) == y and float(Q1_coords[2]) == z:
-                Q1_at = l.split()[5]
-            elif float(M1_coords[0]) == x and float(M1_coords[1]) == y and float(M1_coords[2]) == z:
-                M1_at = l.split()[5]
+    # Reuse the logical mol2 records so wrapped ATOM lines still map back to atom types.
+    for fields in mol2_atom_records(MOL2_PATH):
+        x = float("{:.3f}".format(float(fields[2])))
+        y = float("{:.3f}".format(float(fields[3])))
+        z = float("{:.3f}".format(float(fields[4])))
+        if float(Q1_coords[0]) == x and float(Q1_coords[1]) == y and float(Q1_coords[2]) == z:
+            Q1_at = fields[5]
+        elif float(M1_coords[0]) == x and float(M1_coords[1]) == y and float(M1_coords[2]) == z:
+            M1_at = fields[5]
     QM_bond = f'{Q1_at:<2}' + '-' + f'{M1_at:<2}'
     QM_bond_perm = f'{M1_at:<2}' + '-' + f'{Q1_at:<2}' #X-Y bond is the same as Y-X bond
     if ff_type == 'amber':

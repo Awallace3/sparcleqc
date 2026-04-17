@@ -1,6 +1,81 @@
 import pandas as pd
 from typing import Dict
 
+
+def _token_is_float(token: str) -> bool:
+    try:
+        float(token)
+    except ValueError:
+        return False
+    return True
+
+
+# Amber can wrap long mol2 atom records across two physical lines.
+# Parse the ATOM block into logical records before downstream code indexes fields.
+def mol2_atom_records(MOL2_PATH: str) -> list[list[str]]:
+    records = []
+    in_atom_block = False
+    current_record = None
+    with open(MOL2_PATH, 'r', encoding='latin1', errors='ignore') as molfile:
+        for raw_line in molfile:
+            if raw_line.startswith('@<TRIPOS>ATOM'):
+                in_atom_block = True
+                current_record = None
+                continue
+            if raw_line.startswith('@<TRIPOS>') and in_atom_block:
+                break
+            if not in_atom_block:
+                continue
+            fields = raw_line.split()
+            if not fields:
+                continue
+            if len(fields) >= 8 and fields[0].isdigit() and _token_is_float(fields[2]) and _token_is_float(fields[3]) and _token_is_float(fields[4]):
+                if current_record is not None:
+                    records.append(current_record)
+                current_record = fields
+            elif current_record is not None:
+                current_record.extend(fields)
+        if current_record is not None:
+            records.append(current_record)
+    return records
+
+
+# Wrapped mol2 records can carry status tokens after the charge field.
+# Recover the charge from the trailing numeric token instead of fixed negative indexing.
+def mol2_atom_charge(fields: list[str]) -> float:
+    for token in reversed(fields[5:]):
+        if _token_is_float(token):
+            return float(token)
+    raise ValueError(f"Could not locate atom charge in mol2 record: {' '.join(fields)}")
+
+
+# Amber occasionally omits the atom-type token on capped atoms and can also spill status bits across lines.
+# Infer the semantic mol2 fields from the logical record instead of relying on one fixed column layout.
+def mol2_atom_metadata(fields: list[str]) -> tuple[str, str, str, float]:
+    tail = fields[5:]
+    atom_type = ''
+    if tail and not tail[0].isdigit() and not _token_is_float(tail[0]):
+        atom_type = tail[0]
+        tail = tail[1:]
+    subst_id = None
+    subst_name = None
+    for index, token in enumerate(tail):
+        if token.isdigit() or (token.startswith('-') and token[1:].isdigit()):
+            subst_id = token
+            if index + 1 < len(tail):
+                subst_name = tail[index + 1]
+            break
+    if subst_id is None or subst_name is None:
+        raise ValueError(f"Could not locate residue information in mol2 record: {' '.join(fields)}")
+    charge = None
+    for token in reversed(tail):
+        if _token_is_float(token):
+            charge = float(token)
+            break
+    if charge is None:
+        raise ValueError(f"Could not locate atom charge in mol2 record: {' '.join(fields)}")
+    return atom_type, subst_id, subst_name, charge
+
 def prot_pdb_to_df(PDB_PATH: str, d:Dict) -> pd.DataFrame:
     """ 
     Populates a pandas dataframe with the information in the pdb
@@ -59,24 +134,22 @@ def mol2_to_df(MOL2_PATH:str, m:Dict) -> pd.DataFrame:
         dataframe containing the information from the MOL2
 
     """
-    with open(MOL2_PATH, 'r') as molfile:
-        lines = molfile.readlines()
-        for l in lines:
-            if len(l.split()) > 7:
-                m['MOL2_ID'].append(l.split()[0])
-        df = pd.DataFrame(m)
-        df = df.set_index('MOL2_ID')
-        for l in lines:
-            if len(l.split()) > 7:
-                df.loc[l.split()[0], 'MOL2_AT'] = l.split()[5]
-                df.loc[l.split()[0], 'MOL2_RES'] = l.split()[-3]
-                x_mol = float("{:.3f}".format(float(l.split()[2])))
-                y_mol = float("{:.3f}".format(float(l.split()[3])))
-                z_mol = float("{:.3f}".format(float(l.split()[4])))
-                df.loc[l.split()[0], 'X'] = x_mol
-                df.loc[l.split()[0], 'Y'] = y_mol
-                df.loc[l.split()[0], 'Z'] = z_mol
-                df.loc[l.split()[0], 'q'] = float(l.split()[-2])
+    records = mol2_atom_records(MOL2_PATH)
+    for fields in records:
+        m['MOL2_ID'].append(fields[0])
+    df = pd.DataFrame(m)
+    df = df.set_index('MOL2_ID')
+    for fields in records:
+        atom_type, _, residue_name, charge = mol2_atom_metadata(fields)
+        df.loc[fields[0], 'MOL2_AT'] = atom_type
+        df.loc[fields[0], 'MOL2_RES'] = residue_name
+        x_mol = float("{:.3f}".format(float(fields[2])))
+        y_mol = float("{:.3f}".format(float(fields[3])))
+        z_mol = float("{:.3f}".format(float(fields[4])))
+        df.loc[fields[0], 'X'] = x_mol
+        df.loc[fields[0], 'Y'] = y_mol
+        df.loc[fields[0], 'Z'] = z_mol
+        df.loc[fields[0], 'q'] = charge
     return df        
 
 def combine_prot_dfs(pdb_df:pd.DataFrame, mol2_df:pd.DataFrame) -> pd.DataFrame:
