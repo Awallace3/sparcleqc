@@ -9,7 +9,7 @@ import time
 import ast
 from typing import Dict
 
-from sparcleqc.amber_prep import write_cpptraj, write_cpptraj_skip_autocap, write_tleap, autocap, skip_autocap, reorder_atoms_amber
+from sparcleqc.amber_prep import write_cpptraj, write_cpptraj_skip_autocap, write_tleap, autocap, skip_autocap, reorder_atoms_amber, normalize_chain_ids_for_amber_prep
 from sparcleqc.charmm_prep import psf_to_mol2, get_cx_pdb, reorder_atoms_charmm
 from sparcleqc.complex_tools import check_df_charges, check_mol2_charges, convert_seed, closest_contact
 from sparcleqc.combine_data import create_csv
@@ -378,6 +378,10 @@ def run_sparcle(input_file= None, user_options = None):
             shutil.copy(keywords['pdb_file'], new_dir)
         shutil.move(input_file, new_dir)
         os.chdir(new_dir)
+        # After copying inputs into the run directory, switch to the local PDB
+        # path so any structure repairs stay scoped to this run and never edit
+        # the user's original source file in place.
+        keywords['pdb_file'] = os.path.basename(keywords['pdb_file'])
         output = open(f'{new_dir}.out', 'w')
         output.write('----------------------------------------------------------------------------------------------------\n')
         output.write('''                                                                                    QC 
@@ -394,6 +398,10 @@ def run_sparcle(input_file= None, user_options = None):
 
         #if forcefield is amber, writing and running cpptraj files and dealing with capping residues
         if 'amber_ff' in keywords: 
+            # Infer missing chain IDs on the local copied PDB before cpptraj and
+            # tleap read it so blank-chain termini do not get interpreted as one
+            # continuous peptide across a real chain break.
+            normalize_chain_ids_for_amber_prep(keywords['pdb_file'])
             if 'pre-capped' in keywords:
                 if keywords['pre-capped'] == 'true':
                     write_cpptraj_skip_autocap(keywords['pdb_file'])

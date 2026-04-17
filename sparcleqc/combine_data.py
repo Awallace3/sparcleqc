@@ -76,7 +76,7 @@ def mol2_to_df(MOL2_PATH:str, m:Dict) -> pd.DataFrame:
                 df.loc[l.split()[0], 'X'] = x_mol
                 df.loc[l.split()[0], 'Y'] = y_mol
                 df.loc[l.split()[0], 'Z'] = z_mol
-                df.loc[l.split()[0], 'q'] = l.split()[-2]
+                df.loc[l.split()[0], 'q'] = float(l.split()[-2])
     return df        
 
 def combine_prot_dfs(pdb_df:pd.DataFrame, mol2_df:pd.DataFrame) -> pd.DataFrame:

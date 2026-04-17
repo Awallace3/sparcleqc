@@ -1,6 +1,121 @@
 from pymol.cgo import *
 from pymol import cmd, editor
 
+# These residue names are treated as solvent so blank chain IDs can be
+# normalized without mixing waters into inferred protein chains.
+WATER_RESNAMES = {'WAT', 'HOH', 'TIP', 'TIP3', 'TIP3P', 'OPC', 'SPC', 'SOL'}
+
+
+def _is_atom_record(line: str) -> bool:
+    return line[0:6].strip() in {'ATOM', 'HETATM'}
+
+
+def _residue_block_key(line: str):
+    return (line[16:20].strip(), line[21], line[22:26], line[26])
+
+
+def _parse_resseq(line: str):
+    try:
+        return int(line[22:26].strip())
+    except ValueError:
+        return None
+
+
+def _starts_new_chain(previous_block: dict, current_block: dict) -> bool:
+    if 'OXT' in previous_block['atom_names']:
+        return True
+    previous_resseq = previous_block['resseq']
+    current_resseq = current_block['resseq']
+    if previous_resseq is not None and current_resseq is not None and current_resseq < previous_resseq:
+        return True
+    return False
+
+
+# Some input PDBs mark separate protein chains only through terminal atom
+# patterns such as OXT on the previous residue and H2/H3 on the next N-terminus.
+# This repair fills in missing chain IDs before Amber prep so tleap does not try
+# to reconnect distinct chains and then mis-handle legitimate terminal atoms.
+def normalize_chain_ids_for_amber_prep(pdb_file: str) -> bool:
+    """
+    Infer missing chain IDs before Amber preparation.
+
+    This is aimed at structures where terminal atoms such as OXT/H2/H3
+    indicate separate protein chains, but the input PDB leaves the chain
+    column blank. In that case downstream prep can incorrectly reconnect
+    chains and mis-handle legitimate termini.
+    """
+    with open(pdb_file, 'r') as handle:
+        lines = handle.readlines()
+
+    blocks = []
+    current_block = None
+    for idx, line in enumerate(lines):
+        if not _is_atom_record(line):
+            continue
+        block_key = _residue_block_key(line)
+        if current_block is None or current_block['key'] != block_key:
+            current_block = {
+                'key': block_key,
+                'line_indices': [],
+                'resname': block_key[0],
+                'chain': block_key[1].strip(),
+                'resseq': _parse_resseq(line),
+                'atom_names': set(),
+                'record_types': set(),
+            }
+            blocks.append(current_block)
+        current_block['line_indices'].append(idx)
+        current_block['atom_names'].add(line[11:16].strip())
+        current_block['record_types'].add(line[0:6].strip())
+
+    if not blocks:
+        return False
+
+    existing_chains = {block['chain'] for block in blocks if block['chain']}
+    available_protein_chains = [
+        chain_id for chain_id in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        if chain_id not in existing_chains and chain_id != 'W'
+    ]
+    if not available_protein_chains:
+        return False
+
+    water_chain = 'W' if 'W' not in existing_chains else None
+    current_chain = None
+    previous_protein_block = None
+    changed = False
+
+    for block in blocks:
+        is_water = block['resname'] in WATER_RESNAMES
+        is_protein = 'ATOM' in block['record_types'] and not is_water
+
+        if is_water and not block['chain'] and water_chain is not None:
+            assigned_chain = water_chain
+        elif is_protein and not block['chain']:
+            if previous_protein_block is None or _starts_new_chain(previous_protein_block, block):
+                if not available_protein_chains:
+                    return changed
+                current_chain = available_protein_chains.pop(0)
+            assigned_chain = current_chain
+        else:
+            assigned_chain = None
+
+        if assigned_chain is not None:
+            for line_index in block['line_indices']:
+                line = lines[line_index]
+                lines[line_index] = line[:21] + assigned_chain + line[22:]
+            block['chain'] = assigned_chain
+            changed = True
+
+        if is_protein:
+            previous_protein_block = block
+            if block['chain']:
+                current_chain = block['chain']
+
+    if changed:
+        with open(pdb_file, 'w') as handle:
+            handle.writelines(lines)
+    return changed
+
 
 def reorder_atoms_amber(pdb_file: str) -> None:
     """
