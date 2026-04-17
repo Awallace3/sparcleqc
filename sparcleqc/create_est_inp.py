@@ -399,7 +399,7 @@ def DZn(k:int, df:pd.DataFrame, with_HL:Dict[str,List[int]], num_bonds_broken:in
             q_to_dist = q_to_dist / len(dist_df.index.tolist())
             # distribute charge to atoms in dist_df dataframe
             dist_df['q'] = dist_df['q'] + q_to_dist
-        output.write('Sum of residue group (should be an int):' + str(dist_df.sum()[0]) + '\n')
+        output.write('Sum of residue group (should be an int):' + str(dist_df['q'].sum()) + '\n')
         MM_DZ_df = dist_df[['q', 'X', 'Y', 'Z']] 
      #   print(MM_DZ_df)
         for x in MM_DZ_df.values.tolist():
