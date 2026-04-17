@@ -84,3 +84,22 @@ default-tag = "1.0.0"
 file = "sparcleqc/_version.py"
 [project.scripts]
 sparcleqc = "sparcleqc:main"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: long-running end-to-end SparcleQC regressions",
+    "smoke: fast import or collection checks",
+    "validation: input validation and expected-exit coverage",
+    "psi4: tests that generate Psi4 inputs",
+    "qchem: tests that generate Q-Chem inputs",
+    "nwchem: tests that generate NWChem inputs",
+    "amber: tests that exercise the Amber preparation workflow",
+    "charmm: tests that exercise the CHARMM preparation workflow",
+    "sapt: SAPT or FISAPT-style workflows",
+    "hf: Hartree-Fock supermolecular workflows",
+    "brc: balanced-redistribution charge schemes including BRC variants",
+    "dz: distributed zeroing charge schemes including DZ1/DZ2/DZ3",
+    "z: zeroing charge schemes including Z1/Z2/Z3",
+    "see: static electrostatic embedding charge scheme",
+    "template: template-driven QM region conversion workflow",
+]

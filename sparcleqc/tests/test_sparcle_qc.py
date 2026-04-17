@@ -12,6 +12,28 @@ from pathlib import Path
 import sparcleqc
 
 
+slow = pytest.mark.slow
+smoke = pytest.mark.smoke
+validation = pytest.mark.validation
+
+psi4 = pytest.mark.psi4
+qchem = pytest.mark.qchem
+nwchem = pytest.mark.nwchem
+
+amber = pytest.mark.amber
+charmm = pytest.mark.charmm
+
+sapt = pytest.mark.sapt
+hf = pytest.mark.hf
+
+brc = pytest.mark.brc
+dz = pytest.mark.dz
+z = pytest.mark.z
+see = pytest.mark.see
+
+template = pytest.mark.template
+
+
 TEST_DATA_DIR = Path(__file__).resolve().parent
 PATH_OPTION_KEYS = {
     "pdb_file",
@@ -48,11 +70,17 @@ def run_sparcle_test(request, tmp_path_factory, monkeypatch):
     return _run
 
 
+@smoke
 def test_sparcleqc_imported():
     """Sample test, will always pass so long as import statement worked."""
     assert "sparcleqc" in sys.modules
 
 
+@slow
+@psi4
+@amber
+@sapt
+@brc
 def test_run_sapt_psi4_amber(run_sparcle_test):
     inputs = {
         "input_filename": "test1.in",
@@ -81,6 +109,11 @@ def test_run_sapt_psi4_amber(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@hf
+@brc
 def test_run_hf_psi4_amber(run_sparcle_test):
     inputs = {
         "input_filename": "test2.in",
@@ -113,6 +146,11 @@ def test_run_hf_psi4_amber(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@charmm
+@sapt
+@brc
 def test_run_sapt_psi4_charmm(run_sparcle_test):
     inputs = {
         "input_filename": "test3.in",
@@ -137,6 +175,11 @@ def test_run_sapt_psi4_charmm(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@charmm
+@hf
+@dz
 def test_run_hf_psi4_charmm(run_sparcle_test):
     inputs = {
         "input_filename": "test4.in",
@@ -165,6 +208,11 @@ def test_run_hf_psi4_charmm(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@qchem
+@amber
+@sapt
+@brc
 def test_run_sapt_qchem_amber(run_sparcle_test):
     inputs = {
         "input_filename": "test5.in",
@@ -191,6 +239,11 @@ def test_run_sapt_qchem_amber(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@qchem
+@amber
+@hf
+@brc
 def test_run_hf_qchem_amber(run_sparcle_test):
     inputs = {
         "input_filename": "test6.in",
@@ -222,6 +275,11 @@ def test_run_hf_qchem_amber(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@qchem
+@charmm
+@sapt
+@brc
 def test_run_sapt_qchem_charmm(run_sparcle_test):
     inputs = {
         "input_filename": "test7.in",
@@ -245,6 +303,11 @@ def test_run_sapt_qchem_charmm(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@qchem
+@charmm
+@hf
+@dz
 def test_run_hf_qchem_charmm(run_sparcle_test):
     inputs = {
         "input_filename": "test8.in",
@@ -273,6 +336,11 @@ def test_run_hf_qchem_charmm(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@nwchem
+@amber
+@hf
+@brc
 def test_run_hf_nwchem_amber(run_sparcle_test):
     inputs = {
         "input_filename": "test9.in",
@@ -306,6 +374,11 @@ def test_run_hf_nwchem_amber(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@nwchem
+@charmm
+@hf
+@dz
 def test_run_hf_nwchem_charmm(run_sparcle_test):
     inputs = {
         "input_filename": "test10.in",
@@ -336,6 +409,11 @@ def test_run_hf_nwchem_charmm(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@sapt
+@dz
 def test_run_dz1(run_sparcle_test):
     inputs = {
         "input_filename": "test11.in",
@@ -361,6 +439,11 @@ def test_run_dz1(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@sapt
+@dz
 def test_run_dz2(run_sparcle_test):
     inputs = {
         "input_filename": "test12.in",
@@ -386,6 +469,11 @@ def test_run_dz2(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@hf
+@z
 def test_run_z1(run_sparcle_test):
     inputs = {
         "input_filename": "test13.in",
@@ -415,6 +503,11 @@ def test_run_z1(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@hf
+@z
 def test_run_z2(run_sparcle_test):
     inputs = {
         "input_filename": "test14.in",
@@ -444,6 +537,11 @@ def test_run_z2(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@hf
+@z
 def test_run_z3(run_sparcle_test):
     inputs = {
         "input_filename": "test15.in",
@@ -473,6 +571,11 @@ def test_run_z3(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@hf
+@brc
 def test_run_brcd(run_sparcle_test):
     inputs = {
         "input_filename": "test16.in",
@@ -502,6 +605,11 @@ def test_run_brcd(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@hf
+@brc
 def test_run_brc2(run_sparcle_test):
     inputs = {
         "input_filename": "test17.in",
@@ -531,6 +639,11 @@ def test_run_brc2(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@slow
+@psi4
+@amber
+@hf
+@see
 def test_run_see(run_sparcle_test):
     inputs = {
         "input_filename": "test18.in",
@@ -560,6 +673,8 @@ def test_run_see(run_sparcle_test):
     assert output_dictionary == true_dictionary
 
 
+@validation
+@psi4
 def test_exit(run_sparcle_test):
     exits = []
     true_exits = []
@@ -660,6 +775,12 @@ def test_exit(run_sparcle_test):
     assert exits == true_exits
 
 
+@slow
+@psi4
+@amber
+@hf
+@brc
+@template
 def test_run_convert(run_sparcle_test):
     inputs = {
         "input_filename": "test19.in",
