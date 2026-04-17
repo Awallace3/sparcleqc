@@ -117,6 +117,23 @@ def normalize_chain_ids_for_amber_prep(pdb_file: str) -> bool:
     return changed
 
 
+# Wrapper-generated structures often place the user-supplied ligand in residue
+# name LIG and chain L while cofactors remain as other non-polymer residues.
+# Prefer that specific residue when it exists so bound cofactors are not
+# accidentally exported as the main ligand.
+def get_ligand_selection() -> str:
+    preferred_selections = [
+        'resn LIG and chain L',
+        'resn LIG',
+        'chain L and not polymer and not metals and not solvent and not resn nme and not resn ace',
+    ]
+    fallback_selection = 'all and not polymer and not metals and not solvent and not resn nme and not resn ace'
+    for selection in preferred_selections:
+        if cmd.count_atoms(selection) > 0:
+            return selection
+    return fallback_selection
+
+
 def reorder_atoms_amber(pdb_file: str) -> None:
     """
     When given a pdb, creates a new copy {pdb_file}_fixed.pdb that
@@ -236,7 +253,7 @@ def autocap(pdb_file: str) -> None:
     
     cmd.save(f"cx_autocap.pdb", "pdb")
     
-    cmd.select("ligand", "all and not polymer and not metals and not solvent and not resn nme and not resn ace")
+    cmd.select("ligand", get_ligand_selection())
     cmd.save("ligand.pdb", "ligand")
     cmd.remove("ligand")
     
@@ -265,7 +282,7 @@ def skip_autocap(pdb_file: str) -> None:
     cmd.show("sticks", "all")
     cmd.label("all", "name")
     
-    cmd.select("ligand", "all and not polymer and not metals and not solvent and not resn nme and not resn ace")
+    cmd.select("ligand", get_ligand_selection())
     cmd.save("ligand.pdb", "ligand")
     cmd.remove("ligand")
     

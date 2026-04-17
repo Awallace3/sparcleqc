@@ -808,7 +808,13 @@ def make_monomers(charge_method:str) -> None:
     else:
         num_bonds_broken = 0
     c_QM = 0
+    # The QM atom list comes from the full capped complex, but dataframe.csv only
+    # indexes atoms that were carried through the protein/mol2 mapping. Skip atoms
+    # that are not present here because those belong to separately handled ligand
+    # or cofactor records rather than the protein-charge accounting.
     for x in with_HL['QM']:
+        if x not in df.index:
+            continue
         if '+' in df.at[x,'AT_LABEL']:
             c_QM += int(df.at[x, 'AT_LABEL'][-2])
         elif '-' in df.at[x, 'AT_LABEL']:
