@@ -1,8 +1,10 @@
+import re
+from typing import Tuple
+
 import numpy as np
 import pandas as pd
-from typing import Tuple
 import parmed as pmd
-from sparcleqc.combine_data import mol2_atom_charge, mol2_atom_metadata, mol2_atom_records
+from sparcleqc.combine_data import mol2_atom_metadata, mol2_atom_records
 
 
 def id_to_coords(pdb_file1: str, atom_id1: str) -> Tuple[str, str, str]:
@@ -100,27 +102,22 @@ def check_mol2_charges(mol2_file: str) -> Tuple[int, str]:
         The second entry is a string containing information about which 
         residue is not integer charge and the corresponding fractional charge.
     """
-    total_charge = 0
     #tolerance is how far away a residue can be from an integer without throwing an error
     #this was determined because amber lists charge to 3 decimal places, 
     #so anything different to the fourth decimal place or further is insignificant
     tolerance = 0.0001
     # Residue-charge validation should see the same logical atom records as the dataframe builder.
-    lines = mol2_atom_records(mol2_file)
-    _, residue_number, residue_name, _ = mol2_atom_metadata(lines[0])
-    init_resi = f"{residue_name}_{residue_number}"
-    charge = 0
-    for fields in lines:
-        _, residue_number, residue_name, _ = mol2_atom_metadata(fields)
+    charges = {}
+    for fields in mol2_atom_records(mol2_file):
+        _, residue_number, residue_name, charge = mol2_atom_metadata(fields)
         residue_id = f"{residue_name}_{residue_number}"
-        if residue_id == init_resi:
-            charge += mol2_atom_charge(fields)
-        else:
-            total_charge += charge
-            if np.abs(np.round(charge, 0) - charge) > tolerance:
-                return (0, f'Residue {init_resi} charge: {charge}. Fix pdb/mol2 such that this residue has integer charge and restart')
-            init_resi = residue_id
-            charge = mol2_atom_charge(fields)
+        charges[residue_id] = charges.get(residue_id, 0.0) + charge
+    if not charges:
+        return (0, 'No atom records found in mol2. Check Amber topology generation and restart')
+    # Include the last residue (and single-residue systems), not only boundaries.
+    for residue_id, charge in charges.items():
+        if not np.isfinite(charge) or np.abs(np.round(charge, 0) - charge) > tolerance:
+            return (0, f'Residue {residue_id} charge: {charge}. Fix pdb/mol2 such that this residue has integer charge and restart')
     return (1, 'passed')
 
 def check_df_charges() -> Tuple[int, str]:
@@ -142,79 +139,47 @@ def check_df_charges() -> Tuple[int, str]:
         residue is not integer charge and the corresponding fractional charge.
     """
     
-    total_charge = 0
     tolerance = 0.0001
-    failed = False
-    
-    charges = {}
-    with open('dataframe.csv', 'r') as file:
-        lines = file.readlines()[1:]
-        charge = 0
-        for line in lines:
-            resi_name = line.split(',')[2]
-            if resi_name in charges.keys():
-                charges[resi_name] += float(line.split(',')[-2])
-            else:
-                charges[resi_name] = float(line.split(',')[-2])
-    
-    total_charge = 0
-    
     df = pd.read_csv('dataframe.csv', index_col='PDB_ID')
-    
-    # loop through residues and their sum of point charges
-    for k,v in charges.items():
-        total_charge += v
-        # check for integer charge
-        if np.abs(np.round(v, 0) - v) > tolerance:
-            failed = True
-            return_message = (0, f'Residue {k} charge: {v}. Fix pdb/mol2 such that this residue has integer charge and restart')
-        if 'WAT' in k or 'HOH' in k:
-            # check for neutral waters
-            if v != 0:
-                failed = True
-                return_message = (0, f'Water charge ({k}) does not equal zero. Please choose a new water model or add custom charges in the input. See dataframe.csv for current charges.')
-        if np.round(v,0) != 0:
-            # for non-zero residue charges:
-            int_q = np.round(v, 0)
-            if int_q < 0:
-                q_str = f'{int(np.abs(int_q))}' + '-'
-            elif int_q > 0:
-                q_str = f'{int(np.abs(int_q))}' + '+'
-            idxs = df[df['PDB_RES'] == k].index.tolist()
-            for idx in idxs:
-                # check for formal charge already noted in df (1+, 1-, etc.)
-                if '+' in df.at[idx, 'AT_LABEL'] or '-' in df.at[idx, 'AT_LABEL']:
-                    df_charge = df.at[idx, 'AT_LABEL'][-2:]
-                    if df_charge != q_str:
-                        # make sure dataframe formal charge equals sum of point charges.
-                        print(f'PDB formal charge ({df_charge}) does not equal sum of partial charges in mol2 ({q_str}) for {k}. Proceeding with the formal charge of residue set to the sum of partial charges.')
-                        # if not, remove the formal charge listed
-                        df.at[idx, 'AT_LABEL'] = df.at[idx, 'AT_LABEL'][:-2]
-                        # then add the sum of partial charges to the beta carbon atom label.
-                        cb_idx = df[(df['PDB_RES']  == k) & (df['PDB_AT'] == 'CB')].index.tolist()
-                        if len(cb_idx) > 0:
-                            df.at[cb_idx[0], 'AT_LABEL'] = str(df.at[cb_idx[0], 'AT_LABEL']) + q_str
-                        else:
-                            # if there is no beta carbon (likely a metal ion)
-                            possible_idx = df[(df['PDB_RES']  == k)].index.tolist()
-                            df.at[possible_idx[0], 'AT_LABEL'] = str(df.at[possible_idx[0], 'AT_LABEL']) + q_str
-            try:
-                df_charge
-            except NameError:
-                    # if there is no formal charge already listed in df, add it to the beta carbon
-                    cb_idx = df[(df['PDB_RES']  == k) & (df['PDB_AT'] == 'CB')].index.tolist()
-                    if len(cb_idx) > 0:
-                        if '+' not in df.at[cb_idx[0],'AT_LABEL'] and '-' not in df.at[cb_idx[0],'AT_LABEL']:
-                            df.at[cb_idx[0], 'AT_LABEL'] = str(df.at[cb_idx[0], 'AT_LABEL']) + q_str
-                    else:
-                        possible_idx = df[(df['PDB_RES']  == k)].index.tolist()
-                        if '+' not in df.at[possible_idx[0],'AT_LABEL'] and '-' not in df.at[possible_idx[0],'AT_LABEL']:
-                            df.at[possible_idx[0], 'AT_LABEL'] = str(df.at[possible_idx[0], 'AT_LABEL']) + q_str
-            df.to_csv('dataframe.csv')
-    if not failed:
-        return_message = (1, 'worked')
+    # Blank PDB labels and inserted water extra points round-trip through CSV
+    # as NaN. Normalize them before string operations, without writing "nan".
+    df['AT_LABEL'] = df['AT_LABEL'].astype('string').fillna('')
+    if df['q'].isna().any() or not np.isfinite(df['q']).all():
+        return (0, 'Missing or non-finite partial charges in dataframe.csv. Check PDB/topology atom mapping and restart')
 
-    return return_message
+    for residue, atoms in df.groupby('PDB_RES', sort=False):
+        charge = atoms['q'].sum()
+        if np.abs(np.round(charge) - charge) > tolerance:
+            return (0, f'Residue {residue} charge: {charge}. Fix pdb/mol2 such that this residue has integer charge and restart')
+        if ('WAT' in residue or 'HOH' in residue) and abs(charge) > tolerance:
+            return (0, f'Water charge ({residue}) does not equal zero. Please choose a new water model or add custom charges in the input. See dataframe.csv for current charges.')
+        int_charge = int(np.round(charge))
+        if int_charge == 0:
+            continue
+        suffix = f"{abs(int_charge)}{'+' if int_charge > 0 else '-'}"
+        labelled = [
+            (idx, re.search(r'\d+[+-]$', label))
+            for idx, label in atoms['AT_LABEL'].items()
+        ]
+        labelled = [(idx, match) for idx, match in labelled if match is not None]
+        if len(labelled) == 1 and labelled[0][1].group() == suffix:
+            continue
+        # Reconcile conflicting/multiple labels once per residue. The old
+        # df_charge variable leaked across residues and left later ones unlabelled.
+        if labelled:
+            print(
+                f'PDB formal charge labels for {residue} do not match the sum '
+                f'of partial charges ({suffix}). Replacing them with one residue charge label.'
+            )
+        for idx, match in labelled:
+            label = df.at[idx, 'AT_LABEL']
+            df.at[idx, 'AT_LABEL'] = label[:match.start()]
+        cb_indices = atoms.index[atoms['PDB_AT'] == 'CB']
+        target = cb_indices[0] if len(cb_indices) else atoms.index[0]
+        df.at[target, 'AT_LABEL'] += suffix
+
+    df.to_csv('dataframe.csv')
+    return (1, 'worked')
 
 def closest_contact(pdb1, pdb2):
     """

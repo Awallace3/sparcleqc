@@ -778,6 +778,7 @@ def make_monomers(charge_method:str) -> None:
     CAPPED_QM_PDB_PATH = 'CAPPED_qm.pdb'
     MOL2_PATH = 'prot_autocap_fixed.mol2'
     df = pd.read_csv('dataframe.csv', index_col=['CX_PDB_ID'])
+    df['AT_LABEL'] = df['AT_LABEL'].astype('string').fillna('')
     with open('with_HL.dat', 'r') as dictfile:
         with_HL = json.load(dictfile)
     bond_indices = []

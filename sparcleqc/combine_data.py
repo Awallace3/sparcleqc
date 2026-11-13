@@ -1,5 +1,7 @@
-import pandas as pd
+from collections import Counter
 from typing import Dict
+
+import pandas as pd
 
 
 def _token_is_float(token: str) -> bool:
@@ -43,10 +45,7 @@ def mol2_atom_records(MOL2_PATH: str) -> list[list[str]]:
 # Wrapped mol2 records can carry status tokens after the charge field.
 # Recover the charge from the trailing numeric token instead of fixed negative indexing.
 def mol2_atom_charge(fields: list[str]) -> float:
-    for token in reversed(fields[5:]):
-        if _token_is_float(token):
-            return float(token)
-    raise ValueError(f"Could not locate atom charge in mol2 record: {' '.join(fields)}")
+    return mol2_atom_metadata(fields)[3]
 
 
 # Amber occasionally omits the atom-type token on capped atoms and can also spill status bits across lines.
@@ -67,8 +66,13 @@ def mol2_atom_metadata(fields: list[str]) -> tuple[str, str, str, float]:
             break
     if subst_id is None or subst_name is None:
         raise ValueError(f"Could not locate residue information in mol2 record: {' '.join(fields)}")
+    # A NO_CHARGES MOL2 (as written by ParmEd for an all-zero topology)
+    # omits the charge column. Never mistake the residue ID for its charge.
+    charge_tokens = tail[index + 2:]
+    if not charge_tokens:
+        return atom_type, subst_id, subst_name, 0.0
     charge = None
-    for token in reversed(tail):
+    for token in reversed(charge_tokens):
         if _token_is_float(token):
             charge = float(token)
             break
@@ -135,6 +139,16 @@ def mol2_to_df(MOL2_PATH:str, m:Dict) -> pd.DataFrame:
 
     """
     records = mol2_atom_records(MOL2_PATH)
+    duplicates = [
+        atom_id for atom_id, count in Counter(fields[0] for fields in records).items()
+        if count > 1
+    ]
+    if duplicates:
+        raise ValueError(
+            f"Duplicate MOL2 atom IDs in {MOL2_PATH}: {', '.join(duplicates[:5])}. "
+            "Regenerate the file from an Amber topology using ParmEd; "
+            "do not discard duplicate rows or renumber atoms without their bond references."
+        )
     for fields in records:
         m['MOL2_ID'].append(fields[0])
     df = pd.DataFrame(m)
@@ -183,7 +197,10 @@ def combine_prot_dfs(pdb_df:pd.DataFrame, mol2_df:pd.DataFrame) -> pd.DataFrame:
                 pdb_df.loc[idx,'MOL2_RES'] = mol2_df.loc[mol2_idx,'MOL2_RES']
                 pdb_df.loc[idx,'q'] = mol2_df.loc[mol2_idx,'q']
         # insert fourth point of water, if present in mol2
-        if 'HOH' in pdb_df.loc[idx, 'PDB_RES'] and pdb_df.loc[idx, 'PDB_AT'] == 'O':
+        if (
+            any(water in pdb_df.loc[idx, 'PDB_RES'] for water in ('HOH', 'WAT'))
+            and pdb_df.loc[idx, 'PDB_AT'] == 'O'
+        ):
             EPW_idx = str(int(mol2_idx)+3)
             if EPW_idx in mol2_df.index and 'EP' in mol2_df.loc[EPW_idx, 'MOL2_AT']:
                 pdb_df.loc[str(float(EPW_idx)+.5), 'MOL2_AT'] = mol2_df.loc[EPW_idx, 'MOL2_AT']

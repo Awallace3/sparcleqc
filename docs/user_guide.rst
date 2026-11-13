@@ -17,6 +17,17 @@ General Information
 
     If using Amber, the :python:`pdb_file` path must point to a PDB with the complex (both the protein and ligand included).
 
+    Amber preparation writes :python:`prot_autocap_fixed.prmtop` and
+    :python:`prot_autocap_fixed.inpcrd`. ParmEd converts these files to
+    :python:`prot_autocap_fixed.mol2`, using untruncated sequential atom and residue IDs,
+    force-field atom types, partial charges, and water extra points. This avoids
+    truncated IDs in some versions of LEaP's MOL2 writer.
+
+    A valid Amber topology is required: untyped atoms or missing force-field
+    parameters must be fixed during structure preparation. Inspect the
+    SparcleQC output and :python:`leap.log` if topology generation fails;
+    SparcleQC does not repair or silently renumber a malformed MOL2.
+
     **On capping terminal residues**
 
     For CHARMM, capping of the terminal residues can be done through CHARMM-GUI before running SparcleQC. However, when using an Amber Forcefield, users have the option to have SparcleQC cap the terminal residues with ACE and NME where appropriate. If uploading a PDB with terminal residues already capped with NME and ACE, the following atom names should be used in columns 13-16: hydrogens in NME and ACE should be named H1, H2, and H, the carbon in NME should be named C. Additionally, the peptidic hydrogen (on the backbone nitrogen) of the terminal residues should be named H, not H1. In the SparcleQC input file, set :python:`pre-capped: true`. 

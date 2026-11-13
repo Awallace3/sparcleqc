@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import numpy as np
+import parmed as pmd
 from pymol.cgo import *
 from pymol import cmd, editor
 
@@ -391,5 +395,38 @@ def write_tleap(forcefield: str, water_model: str, other_ffs: list) -> None:
             f.write(f'source {ff}\n')
         f.write(f'mol = loadPdb "prot_autocap_fixed.pdb"\n')
         f.write('check mol\n')
-        f.write(f'savemol2 mol prot_autocap_fixed.mol2 1\n')
+        f.write('saveAmberParm mol prot_autocap_fixed.prmtop prot_autocap_fixed.inpcrd\n')
         f.write('quit')
+
+
+def amber_topology_to_mol2(
+    topology_path: str = 'prot_autocap_fixed.prmtop',
+    coordinates_path: str = 'prot_autocap_fixed.inpcrd',
+    mol2_path: str = 'prot_autocap_fixed.mol2',
+) -> None:
+    """Export Amber topology through ParmEd, without LEaP's MOL2 ID truncation.
+
+    Keep one molecule with sequential atom/residue IDs, Amber atom types,
+    partial charges, bonds, and extra points. A valid, fully parameterized
+    topology is required; a failed LEaP run must not fall back to savemol2.
+    """
+    diagnostic = (
+        'Amber topology generation/export failed. Inspect the SparcleQC output '
+        'and leap.log; fix structure preparation, untyped atoms, or missing '
+        'force-field parameters before retrying.'
+    )
+    for path in (topology_path, coordinates_path):
+        if not Path(path).is_file() or Path(path).stat().st_size == 0:
+            raise RuntimeError(f'{diagnostic} Missing or empty file: {path}')
+    try:
+        structure = pmd.load_file(str(topology_path), xyz=str(coordinates_path))
+        if (
+            not structure.atoms
+            or structure.coordinates is None
+            or not np.isfinite(structure.coordinates).all()
+            or not all(atom.type.strip() and np.isfinite(atom.charge) for atom in structure.atoms)
+        ):
+            raise ValueError('Topology contains missing atom types, charges, or coordinates')
+        structure.save(str(mol2_path), format='mol2', split=False, overwrite=True)
+    except Exception as error:
+        raise RuntimeError(f'{diagnostic} {error}') from error

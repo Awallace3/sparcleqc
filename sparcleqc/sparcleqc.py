@@ -9,7 +9,7 @@ import time
 import ast
 from typing import Dict
 
-from sparcleqc.amber_prep import write_cpptraj, write_cpptraj_skip_autocap, write_tleap, autocap, skip_autocap, reorder_atoms_amber, normalize_chain_ids_for_amber_prep, normalize_residue_names_for_amber_prep
+from sparcleqc.amber_prep import write_cpptraj, write_cpptraj_skip_autocap, write_tleap, autocap, skip_autocap, reorder_atoms_amber, normalize_chain_ids_for_amber_prep, normalize_residue_names_for_amber_prep, amber_topology_to_mol2
 from sparcleqc.charmm_prep import psf_to_mol2, get_cx_pdb, reorder_atoms_charmm
 from sparcleqc.complex_tools import check_df_charges, check_mol2_charges, convert_seed, closest_contact
 from sparcleqc.combine_data import create_csv
@@ -443,15 +443,30 @@ def run_sparcle(input_file= None, user_options = None):
         #if forcefield is amber, writing and running tleap to create mol2
         if 'amber_ff' in keywords:
             write_tleap(keywords['amber_ff'], keywords['water_model'], keywords['other_amber_ff'])
-            result = subprocess.run(['tleap -f tleap.in'], text = True, shell = True, capture_output = True)
+            result = subprocess.run(['tleap', '-f', 'tleap.in'], text=True, capture_output=True)
             output.write('----------------------------------------------------------------------------------------------------\n')
             output.write('tleap'.center(100)+'\n')
             output.write('----------------------------------------------------------------------------------------------------\n')
             output.write(result.stdout)
+            output.write(result.stderr)
+            output.flush()
             if 'missing heavy atom' in result.stdout:
                 for line in result.stdout.splitlines():
                     if 'missing heavy atom' in line:
-                         print(f"Missing heavy atom: {line.split(':')[1]}")
+                        print(f"Missing heavy atom: {line.split(':')[1]}")
+            fatal_errors = [
+                line.strip()
+                for line in (result.stdout + '\n' + result.stderr).splitlines()
+                if 'FATAL' in line
+            ]
+            if result.returncode != 0 or fatal_errors:
+                raise RuntimeError(
+                    'Amber topology generation failed. Inspect the SparcleQC output '
+                    'and leap.log; fix structure preparation, untyped atoms, or missing '
+                    'force-field parameters before retrying.'
+                    + (f' {fatal_errors[0]}' if fatal_errors else '')
+                )
+            amber_topology_to_mol2()
         #else, the forcefield is charmm and converting psf to mol2
         else:
             psf_to_mol2(keywords['pdb_file'])
